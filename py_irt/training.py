@@ -36,17 +36,12 @@ from rich.table import Table
 from sklearn.feature_extraction.text import CountVectorizer
 
 
-# These imports are necessary to have @register run
+
+# This import is necessary to have @register run
 # pylint: disable=unused-import
-from py_irt.models import (
-    abstract_model,
-    one_param_logistic,
-    two_param_logistic,
-    three_param_logistic,
-    four_param_logistic,
-    multidim_2pl,
-    amortized_1pl,
-)
+import py_irt.models
+
+from py_irt.models import abstract_model
 from py_irt.io import safe_file, write_json
 from py_irt.dataset import Dataset
 from py_irt.initializers import INITIALIZERS, IrtInitializer
@@ -89,6 +84,7 @@ class IrtModelTrainer:
 
         if self.amortized:
             self._config.vocab_size = len(self._dataset.observation_items[0])
+        console.quiet = not self._verbose
         console.log(f"Vocab size: {self._config.vocab_size}")
 
         # filter out test data
@@ -179,7 +175,6 @@ class IrtModelTrainer:
         responses = torch.tensor(
             self._dataset.observations, dtype=torch.float, device=device
         )
-        print(subjects.size(), items.size())
         # Don't take a step here, just make sure params are initialized
         # so that initializers can modify the params
         _ = self._pyro_model(subjects, items, responses)
@@ -195,7 +190,9 @@ class IrtModelTrainer:
         loss = float("inf")
         best_loss = loss
         current_lr = self._config.lr
-        with Live(table) as live:
+        
+        with Live(table if self._verbose else None) as live:
+            live.console.quiet = not self._verbose
             live.console.print(f"Training Pyro IRT Model for {epochs} epochs")
             for epoch in range(epochs):
                 loss = svi.step(subjects, items, responses)
