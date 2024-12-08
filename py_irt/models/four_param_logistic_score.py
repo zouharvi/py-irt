@@ -56,15 +56,15 @@ class FourParamLogScore(abstract_model.IrtModel):
         )
 
     def model_hierarchical(self, subjects, items, obs):
-        mu_b = pyro.sample(
-            "mu_b",
+        mu_diff = pyro.sample(
+            "mu_diff",
             dist.Normal(
                 torch.tensor(0.0, device=self.device),
                 torch.tensor(1.0e6, device=self.device),
             ),
         )
-        u_b = pyro.sample(
-            "u_b",
+        u_diff = pyro.sample(
+            "u_diff",
             dist.Gamma(
                 torch.tensor(1.0, device=self.device),
                 torch.tensor(1.0, device=self.device),
@@ -86,15 +86,15 @@ class FourParamLogScore(abstract_model.IrtModel):
             ),
         )
 
-        mu_gamma = pyro.sample(
-            "mu_gamma",
+        mu_disc = pyro.sample(
+            "mu_disc",
             dist.Normal(
                 torch.tensor(0.0, device=self.device),
                 torch.tensor(1.0e6, device=self.device),
             ),
         )
-        u_gamma = pyro.sample(
-            "u_gamma",
+        u_disc = pyro.sample(
+            "u_disc",
             dist.Gamma(
                 torch.tensor(1.0, device=self.device),
                 torch.tensor(1.0, device=self.device),
@@ -111,8 +111,8 @@ class FourParamLogScore(abstract_model.IrtModel):
         )
 
         # Fraction of feasible: Simple variable to be fit
-        lambdas = pyro.param(
-            "lambdas",
+        feass = pyro.param(
+            "feass",
             torch.ones(self.num_items, device=self.device),
             constraint=constraints.unit_interval,
         )
@@ -120,30 +120,30 @@ class FourParamLogScore(abstract_model.IrtModel):
         with pyro.plate("thetas", self.num_subjects, device=self.device):
             ability = pyro.sample("theta", dist.Normal(mu_theta, 1.0 / u_theta))
 
-        with pyro.plate("bs", self.num_items, device=self.device):
-            diff = pyro.sample("b", dist.Normal(mu_b, 1.0 / u_b))
+        with pyro.plate("diffs", self.num_items, device=self.device):
+            diff = pyro.sample("diff", dist.Normal(mu_diff, 1.0 / u_diff))
 
-        with pyro.plate("gammas", self.num_items, device=self.device):
-            disc = pyro.sample("gamma", dist.Normal(mu_gamma, 1.0 / u_gamma))
+        with pyro.plate("discs", self.num_items, device=self.device):
+            disc = pyro.sample("disc", dist.Normal(mu_disc, 1.0 / u_disc))
 
         with pyro.plate("observe_data", obs.size(0)):
             p_star = torch.sigmoid(disc[items] * (ability[subjects] - diff[items]))
             pyro.sample(
                 "obs",
-                dist.Normal(loc=lambdas[items] * p_star, scale=1.0/u_obs),
+                dist.Normal(loc=feass[items]+(1-feass[items]) * p_star, scale=1.0/u_obs),
                 obs=obs,
             )
 
     def guide_hierarchical(self, subjects, items, obs):
-        loc_mu_b_param = pyro.param("loc_mu_b", torch.tensor(0.0, device=self.device))
-        scale_mu_b_param = pyro.param(
-            "scale_mu_b",
+        loc_mu_diff_param = pyro.param("loc_mu_diff", torch.tensor(0.0, device=self.device))
+        scale_mu_diff_param = pyro.param(
+            "scale_mu_diff",
             torch.tensor(1.0e2, device=self.device),
             constraint=constraints.positive,
         )
-        loc_mu_gamma_param = pyro.param("loc_mu_gamma", torch.tensor(0.0, device=self.device))
-        scale_mu_gamma_param = pyro.param(
-            "scale_mu_gamma",
+        loc_mu_disc_param = pyro.param("loc_mu_disc", torch.tensor(0.0, device=self.device))
+        scale_mu_disc_param = pyro.param(
+            "scale_mu_disc",
             torch.tensor(1.0e2, device=self.device),
             constraint=constraints.positive,
         )
@@ -153,23 +153,23 @@ class FourParamLogScore(abstract_model.IrtModel):
             torch.tensor(1.0e2, device=self.device),
             constraint=constraints.positive,
         )
-        alpha_b_param = pyro.param(
-            "alpha_b",
+        alpha_diff_param = pyro.param(
+            "alpha_diff",
             torch.tensor(1.0, device=self.device),
             constraint=constraints.positive,
         )
-        beta_b_param = pyro.param(
-            "beta_b",
+        beta_diff_param = pyro.param(
+            "beta_diff",
             torch.tensor(1.0, device=self.device),
             constraint=constraints.positive,
         )
-        alpha_gamma_param = pyro.param(
-            "alpha_gamma",
+        alpha_disc_param = pyro.param(
+            "alpha_disc",
             torch.tensor(1.0, device=self.device),
             constraint=constraints.positive,
         )
-        beta_gamma_param = pyro.param(
-            "beta_gamma",
+        beta_disc_param = pyro.param(
+            "beta_disc",
             torch.tensor(1.0, device=self.device),
             constraint=constraints.positive,
         )
@@ -201,25 +201,25 @@ class FourParamLogScore(abstract_model.IrtModel):
             torch.ones(self.num_subjects, device=self.device),
             constraint=constraints.positive,
         )
-        m_b_param = pyro.param("loc_diff", torch.zeros(self.num_items, device=self.device))
-        s_b_param = pyro.param(
+        m_diff_param = pyro.param("loc_diff", torch.zeros(self.num_items, device=self.device))
+        s_diff_param = pyro.param(
             "scale_diff",
             torch.ones(self.num_items, device=self.device),
             constraint=constraints.positive,
         )
-        m_gamma_param = pyro.param("loc_disc", torch.zeros(self.num_items, device=self.device))
-        s_gamma_param = pyro.param(
+        m_disc_param = pyro.param("loc_disc", torch.zeros(self.num_items, device=self.device))
+        s_disc_param = pyro.param(
             "scale_disc",
             torch.ones(self.num_items, device=self.device),
             constraint=constraints.positive,
         )
 
         # sample statements
-        mu_b = pyro.sample("mu_b", dist.Normal(loc_mu_b_param, scale_mu_b_param))
-        u_b = pyro.sample("u_b", dist.Gamma(alpha_b_param, beta_b_param))
+        mu_diff = pyro.sample("mu_diff", dist.Normal(loc_mu_diff_param, scale_mu_diff_param))
+        u_diff = pyro.sample("u_diff", dist.Gamma(alpha_diff_param, beta_diff_param))
 
-        mu_gamma = pyro.sample("mu_gamma", dist.Normal(loc_mu_gamma_param, scale_mu_gamma_param))
-        u_gamma = pyro.sample("u_gamma", dist.Gamma(alpha_gamma_param, beta_gamma_param))
+        mu_disc = pyro.sample("mu_disc", dist.Normal(loc_mu_disc_param, scale_mu_disc_param))
+        u_disc = pyro.sample("u_disc", dist.Gamma(alpha_disc_param, beta_disc_param))
 
         u_obs = pyro.sample("u_obs", dist.Gamma(alpha_obs_param, beta_obs_param))
 
@@ -229,18 +229,18 @@ class FourParamLogScore(abstract_model.IrtModel):
         with pyro.plate("thetas", self.num_subjects, device=self.device):
             pyro.sample("theta", dist.Normal(m_theta_param, s_theta_param))
 
-        with pyro.plate("bs", self.num_items, device=self.device):
-            pyro.sample("b", dist.Normal(m_b_param, s_b_param))
+        with pyro.plate("diffs", self.num_items, device=self.device):
+            pyro.sample("diff", dist.Normal(m_diff_param, s_diff_param))
 
-        with pyro.plate("gammas", self.num_items, device=self.device):
-            pyro.sample("gamma", dist.Normal(m_gamma_param, s_gamma_param))
+        with pyro.plate("discs", self.num_items, device=self.device):
+            pyro.sample("disc", dist.Normal(m_disc_param, s_disc_param))
 
     def export(self):
         return {
             "ability": pyro.param("loc_ability").data.tolist(),
             "diff": pyro.param("loc_diff").data.tolist(),
             "disc": pyro.param("loc_disc").data.tolist(),
-            "lambdas": pyro.param("lambdas").data.tolist(),
+            "feas": pyro.param("feass").data.tolist(),
         }
 
     def predict(self, subjects, items, params_from_file=None):
@@ -252,8 +252,11 @@ class FourParamLogScore(abstract_model.IrtModel):
         abilities = np.array([model_params["ability"][i] for i in subjects])
         diffs = np.array([model_params["diff"][i] for i in items])
         discs = np.array([model_params["disc"][i] for i in items])
-        lambdas = np.array([model_params["lambdas"][i] for i in items])
-        return lambdas / (1 + np.exp(-discs * (abilities - diffs)))
+        feass = np.array([model_params["feass"][i] for i in items])
+        # TODO: taken from 3PL
+        return feass + (1 - feass) / (1 + np.exp(-discs * (abilities - diffs)))
+        # return feass / (1 + np.exp(-discs * (abilities - diffs)))
+    
 
     def get_guide(self):
         return self.guide_hierarchical
