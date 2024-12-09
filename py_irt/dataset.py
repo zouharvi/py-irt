@@ -91,7 +91,7 @@ class Dataset(BaseModel):
         subject_id_to_ix = {}
         ix_to_subject_id = {}
         input_data = read_jsonlines(data_path)
-		for line in input_data:
+        for line in input_data:
             subject_id = line["subject_id"]
             subject_ids.add(subject_id)
             responses = line["responses"]
@@ -109,10 +109,9 @@ class Dataset(BaseModel):
         if amortized:
             vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words='english')
             vectorizer.fit(item_ids)
-		
-		if embedding_model_id:
-			embedding_model = SentenceTransformer(embdding_model_id)
-        	
+        if embedding_model_id:
+            embedding_model = SentenceTransformer(embdding_model_id)
+
         observation_subjects = []
         observation_items = []
         observations = []
@@ -127,8 +126,8 @@ class Dataset(BaseModel):
                 if amortized:
                     observation_items.append(item_id_to_ix[item_id])
                 elif embedding:
-					observation_items.append(embedding_model.encode([item_id]).tolist()[0])
-				else:
+                    observation_items.append(embedding_model.encode([item_id]).tolist()[0])
+                else:
                     observation_items.append(vectorizer.transform([item_id]).todense().tolist()[0])
                 if train_items is not None:
                     training_example.append(train_items[subject_id][item_id])
