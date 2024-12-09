@@ -125,7 +125,7 @@ class Dataset(BaseModel):
                 observation_subjects.append(subject_id_to_ix[subject_id])
                 if amortized:
                     observation_items.append(item_id_to_ix[item_id])
-                elif embedding:
+                elif embedding_model_id:
                     observation_items.append(embedding_model.encode([item_id]).tolist()[0])
                 else:
                     observation_items.append(vectorizer.transform([item_id]).todense().tolist()[0])
