@@ -117,20 +117,18 @@ class FourParamLogScore(abstract_model.IrtModel):
             constraint=constraints.unit_interval,
         )
 
-        with pyro.plate("thetas", self.num_subjects, device=self.device):
+        with pyro.plate("systems", self.num_subjects, device=self.device):
             ability = pyro.sample("theta", dist.Normal(mu_theta, 1.0 / u_theta))
 
-        with pyro.plate("diffs", self.num_items, device=self.device):
+        with pyro.plate("items", self.num_items, device=self.device):
             diff = pyro.sample("diff", dist.Normal(mu_diff, 1.0 / u_diff))
-
-        with pyro.plate("discs", self.num_items, device=self.device):
             disc = pyro.sample("disc", dist.Normal(mu_disc, 1.0 / u_disc))
 
         with pyro.plate("observe_data", obs.size(0)):
             p_star = torch.sigmoid(disc[items] * (ability[subjects] - diff[items]))
             pyro.sample(
                 "obs",
-                dist.Normal(loc=feass[items]+(1-feass[items]) * p_star, scale=1.0/u_obs),
+                dist.Normal(loc=feass[items] * p_star, scale=1.0/u_obs),
                 obs=obs,
             )
 
@@ -226,13 +224,11 @@ class FourParamLogScore(abstract_model.IrtModel):
         mu_theta = pyro.sample("mu_theta", dist.Normal(loc_mu_theta_param, scale_mu_theta_param))
         u_theta = pyro.sample("u_theta", dist.Gamma(alpha_theta_param, beta_theta_param))
 
-        with pyro.plate("thetas", self.num_subjects, device=self.device):
+        with pyro.plate("systems", self.num_subjects, device=self.device):
             pyro.sample("theta", dist.Normal(m_theta_param, s_theta_param))
 
-        with pyro.plate("diffs", self.num_items, device=self.device):
+        with pyro.plate("items", self.num_items, device=self.device):
             pyro.sample("diff", dist.Normal(m_diff_param, s_diff_param))
-
-        with pyro.plate("discs", self.num_items, device=self.device):
             pyro.sample("disc", dist.Normal(m_disc_param, s_disc_param))
 
     def export(self):
@@ -253,9 +249,9 @@ class FourParamLogScore(abstract_model.IrtModel):
         diffs = np.array([model_params["diff"][i] for i in items])
         discs = np.array([model_params["disc"][i] for i in items])
         feass = np.array([model_params["feass"][i] for i in items])
-        # TODO: taken from 3PL
-        return feass + (1 - feass) / (1 + np.exp(-discs * (abilities - diffs)))
-        # return feass / (1 + np.exp(-discs * (abilities - diffs)))
+        return feass / (1 + np.exp(-discs * (abilities - diffs)))
+        # TODO: taken from 3PL, has incongruence with the model (in bernouli, see diff between 3PL and 4PL)
+        # return feass + (1 - feass) / (1 + np.exp(-discs * (abilities - diffs)))
     
 
     def get_guide(self):
