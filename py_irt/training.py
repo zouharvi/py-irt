@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from typing import Optional, Union, Dict
+from sentence_transformers import SentenceTransformer
 from pathlib import Path
 
 import typer
@@ -61,6 +62,7 @@ class IrtModelTrainer:
         config: IrtConfig,
         dataset: Optional[Dataset] = None,
         verbose: bool = True,
+        embedding_model_id: str = None
     ) -> None:
         self._data_path = data_path
         self._config = config
@@ -77,6 +79,7 @@ class IrtModelTrainer:
         self._pyro_guide = None
         self._verbose = verbose
         self.best_params = None
+        self.embedding_model_id = embedding_model_id
         if dataset is None:
             self._dataset = Dataset.from_jsonlines(data_path, amortized=self.amortized)
         else:
@@ -169,6 +172,7 @@ class IrtModelTrainer:
         subjects = torch.tensor(
             self._dataset.observation_subjects, dtype=torch.long, device=device
         )
+        # exit(1)
         items = torch.tensor(
             self._dataset.observation_items, dtype=torch.long, device=device
         )
@@ -196,6 +200,7 @@ class IrtModelTrainer:
             live.console.print(f"Training Pyro IRT Model for {epochs} epochs")
             for epoch in range(epochs):
                 loss = svi.step(subjects, items, responses)
+                # exit(1)
                 if loss < best_loss:
                     best_loss = loss
                     self.best_params = self.export(items)
@@ -216,10 +221,14 @@ class IrtModelTrainer:
 
     def export(self, items):
         if self.amortized:
-            vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words="english")
             inputs = list(self._dataset.item_ids)
-            vectorizer.fit(inputs)
-            inputs = vectorizer.transform(inputs).todense().tolist()
+            if not self.embedding_model_id:
+                vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words="english")
+                vectorizer.fit(inputs)
+                inputs = vectorizer.transform(inputs).todense().tolist()
+            else:
+                embedding_model = SentenceTransformer(self.embedding_model_id)
+                inputs = embedding_model.encode(inputs).tolist()
             results = self.irt_model.export(inputs)
         else:
             results = self.irt_model.export()
