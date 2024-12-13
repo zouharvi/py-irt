@@ -101,9 +101,9 @@ class FourParamLogScore(abstract_model.IrtModel):
             ),
         )
 
-        # TODO: ours
-        u_obs = pyro.sample(
-            "u_obs",
+        # Normal distribution requires a scale parameter
+        scale_obs = pyro.sample(
+            "scale_obs",
             dist.Gamma(
                 torch.tensor(1.0, device=self.device),
                 torch.tensor(1.0, device=self.device),
@@ -128,7 +128,7 @@ class FourParamLogScore(abstract_model.IrtModel):
             p_star = torch.sigmoid(disc[items] * (ability[subjects] - diff[items]))
             pyro.sample(
                 "obs",
-                dist.Normal(loc=feass[items] * p_star, scale=1.0/u_obs),
+                dist.Normal(loc=feass[items] * p_star, scale=1.0/scale_obs),
                 obs=obs,
             )
 
@@ -219,7 +219,7 @@ class FourParamLogScore(abstract_model.IrtModel):
         mu_disc = pyro.sample("mu_disc", dist.Normal(loc_mu_disc_param, scale_mu_disc_param))
         u_disc = pyro.sample("u_disc", dist.Gamma(alpha_disc_param, beta_disc_param))
 
-        u_obs = pyro.sample("u_obs", dist.Gamma(alpha_obs_param, beta_obs_param))
+        scale_obs = pyro.sample("scale_obs", dist.Gamma(alpha_obs_param, beta_obs_param))
 
         mu_theta = pyro.sample("mu_theta", dist.Normal(loc_mu_theta_param, scale_mu_theta_param))
         u_theta = pyro.sample("u_theta", dist.Gamma(alpha_theta_param, beta_theta_param))
