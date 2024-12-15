@@ -28,6 +28,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 from ordered_set import OrderedSet
 from rich.console import Console
 from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
 
 import pandas as pd
 
@@ -105,30 +106,36 @@ class Dataset(BaseModel):
         for idx, subject_id in enumerate(subject_ids):
             subject_id_to_ix[subject_id] = idx
             ix_to_subject_id[idx] = subject_id
-        
-        if amortized:
-            vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words='english')
-            vectorizer.fit(item_ids)
+
         if embedding_model_id:
-            embedding_model = SentenceTransformer(embdding_model_id)
+            amortized = True
+
+        if amortized:
+            if embedding_model_id:
+                embedding_model = SentenceTransformer(embedding_model_id)
+                vectors = embedding_model.encode(list(item_ids)).tolist()
+            else:
+                vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words='english')
+                vectorizer.fit(item_ids)
+                vectors = vectorizer.transform(list(item_ids)).todense().tolist()
+            item_vectors = {list(item_ids)[i]: vectors[i] for i in range(len(item_ids))}
 
         observation_subjects = []
         observation_items = []
         observations = []
         training_example = []
         console.log(f'amortized: {amortized}')
-        console.log(f'embedding: {embedding}')
+        console.log(f'embedding: {embedding_model_id}')
+
         for idx, line in enumerate(input_data):
             subject_id = line["subject_id"]
             for item_id, response in line["responses"].items():
                 observations.append(response)
                 observation_subjects.append(subject_id_to_ix[subject_id])
                 if amortized:
-                    observation_items.append(item_id_to_ix[item_id])
-                elif embedding_model_id:
-                    observation_items.append(embedding_model.encode([item_id]).tolist()[0])
+                    observation_items.append(item_vectors[item_id])
                 else:
-                    observation_items.append(vectorizer.transform([item_id]).todense().tolist()[0])
+                    observation_items.append(item_id_to_ix[item_id])
                 if train_items is not None:
                     training_example.append(train_items[subject_id][item_id])
                 else:
