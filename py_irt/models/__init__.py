@@ -1,5 +1,6 @@
 from py_irt.models.abstract_model import IrtModel
 from py_irt.models.amortized_1pl import Amortized1PL
+from py_irt.models.amortized_1pl_score import Amortized1PLScore
 from py_irt.models.multidim_2pl import Multidim2PL
 from py_irt.models.one_param_logistic import OneParamLog
 from py_irt.models.two_param_logistic import TwoParamLog

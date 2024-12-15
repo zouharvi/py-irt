@@ -27,6 +27,8 @@ from py_irt.io import read_jsonlines
 from sklearn.feature_extraction.text import CountVectorizer
 from ordered_set import OrderedSet
 from rich.console import Console
+from sentence_transformers import SentenceTransformer
+
 import pandas as pd
 
 console = Console()
@@ -75,7 +77,7 @@ class Dataset(BaseModel):
         return item_accuracies
 
     @classmethod
-    def from_jsonlines(cls, data_path: Path, train_items: dict = None, amortized: bool = False):
+    def from_jsonlines(cls, data_path: Path, train_items: dict = None, amortized: bool = False, embedding_model_id: str = None):
         """Parse IRT dataset from jsonlines, formatted in the following way:
         * The dataset is in jsonlines format, each line representing the responses of a subject
         * Each row looks like this:
@@ -95,7 +97,7 @@ class Dataset(BaseModel):
             responses = line["responses"]
             for item_id in responses.keys():
                 item_ids.add(item_id)
-
+				
         for idx, item_id in enumerate(item_ids):
             item_id_to_ix[item_id] = idx
             ix_to_item_id[idx] = item_id
@@ -107,20 +109,24 @@ class Dataset(BaseModel):
         if amortized:
             vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words='english')
             vectorizer.fit(item_ids)
+        if embedding_model_id:
+            embedding_model = SentenceTransformer(embdding_model_id)
 
-        
         observation_subjects = []
         observation_items = []
         observations = []
         training_example = []
         console.log(f'amortized: {amortized}')
+        console.log(f'embedding: {embedding}')
         for idx, line in enumerate(input_data):
             subject_id = line["subject_id"]
             for item_id, response in line["responses"].items():
                 observations.append(response)
                 observation_subjects.append(subject_id_to_ix[subject_id])
-                if not amortized:
+                if amortized:
                     observation_items.append(item_id_to_ix[item_id])
+                elif embedding_model_id:
+                    observation_items.append(embedding_model.encode([item_id]).tolist()[0])
                 else:
                     observation_items.append(vectorizer.transform([item_id]).todense().tolist()[0])
                 if train_items is not None:
