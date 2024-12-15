@@ -7,3 +7,4 @@ from py_irt.models.two_param_logistic import TwoParamLog
 from py_irt.models.three_param_logistic import ThreeParamLog
 from py_irt.models.four_param_logistic import FourParamLog
 from py_irt.models.four_param_logistic_score import FourParamLogScore
+from py_irt.models.amortized_four_param_logistic_score import AmortizedFourParamLogScore

@@ -172,7 +172,7 @@ class IrtModelTrainer:
         subjects = torch.tensor(
             self._dataset.observation_subjects, dtype=torch.long, device=device
         )
-        # exit(1)
+        
         items = torch.tensor(
             self._dataset.observation_items, dtype=torch.long, device=device
         )

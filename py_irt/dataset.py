@@ -77,7 +77,7 @@ class Dataset(BaseModel):
         return item_accuracies
 
     @classmethod
-    def from_jsonlines(cls, data_path: Path, train_items: dict = None, amortized: bool = False, embedding_model_id: str = None):
+    def from_jsonlines(cls, data_path: Path, train_items: dict = None, embeddings: Union[Dict[str, List[float]], None] = None):
         """Parse IRT dataset from jsonlines, formatted in the following way:
         * The dataset is in jsonlines format, each line representing the responses of a subject
         * Each row looks like this:
@@ -106,29 +106,20 @@ class Dataset(BaseModel):
             subject_id_to_ix[subject_id] = idx
             ix_to_subject_id[idx] = subject_id
         
-        if amortized:
-            vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words='english')
-            vectorizer.fit(item_ids)
-        if embedding_model_id:
-            embedding_model = SentenceTransformer(embdding_model_id)
-
         observation_subjects = []
         observation_items = []
         observations = []
         training_example = []
-        console.log(f'amortized: {amortized}')
-        console.log(f'embedding: {embedding}')
         for idx, line in enumerate(input_data):
             subject_id = line["subject_id"]
             for item_id, response in line["responses"].items():
                 observations.append(response)
                 observation_subjects.append(subject_id_to_ix[subject_id])
-                if amortized:
-                    observation_items.append(item_id_to_ix[item_id])
-                elif embedding_model_id:
-                    observation_items.append(embedding_model.encode([item_id]).tolist()[0])
+                if embeddings:
+                    observation_items.append(embeddings[item_id])
                 else:
-                    observation_items.append(vectorizer.transform([item_id]).todense().tolist()[0])
+                    observation_items.append(item_id_to_ix[item_id])
+                    
                 if train_items is not None:
                     training_example.append(train_items[subject_id][item_id])
                 else:
@@ -148,7 +139,7 @@ class Dataset(BaseModel):
         )
 
     @classmethod
-    def from_pandas(cls, df, subject_column=None, item_columns=None):
+    def from_pandas(cls, df, subject_column=None, item_columns=None, embeddings: Union[Dict[str, List[float]], None] = None):
         """Build a Dataset object from a pandas DataFrame
 
         Rows represent subjects. Columns represent items. Values represent responses. Nan values are treated as missing data.
@@ -184,7 +175,7 @@ class Dataset(BaseModel):
                 item_columns = list(item_columns)
             except TypeError:
                 raise ValueError("item_columns must be an iterable of strings if provided")
-        
+
         # default value for subject columns is the index
         if subject_column is None:
             subject_column = "subject_name"
@@ -226,16 +217,26 @@ class Dataset(BaseModel):
             "subject_name": df[subject_column].unique(),
             "subject_id": range(len(df[subject_column].unique()))
         })
+
         merged = pd.merge(
             pd.merge(melted, item_ids, how="left", on="item_name"),
             subject_ids, how="left", on="subject_name"
-            )
+        )
+
+        # replace with embeddings / vectors if we have them
+        observation_items = []
+        for item_name in merged.item_name.values:
+            if embeddings:
+                observation_items.append(embeddings[item_name])
+            else:
+                observation_items.append(item_name)
+
 
         return cls(
             item_ids = OrderedSet([str(x) for x in merged.item_name.values]),
             subject_ids = OrderedSet([str(x) for x in merged.subject_name.values]),
             observation_subjects = list(merged.subject_id.values),
-            observation_items = list(merged.item_id.values),
+            observation_items = observation_items,
             observations = list(merged.outcome.values),
             training_example = [True for _ in range(merged.shape[0])],
             item_id_to_ix = dict(zip(item_ids.item_name, item_ids.item_id)),

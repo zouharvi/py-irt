@@ -1,26 +1,3 @@
-# MIT License
-
-# Copyright (c) 2019 John Lalor <john.lalor@nd.edu> and Pedro Rodriguez <me@pedro.ai>
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-
 # pylint: disable=unused-argument,unused-variable,not-callable,no-name-in-module,no-member,protected-access
 from functools import partial
 from py_irt.models import abstract_model
@@ -125,7 +102,7 @@ class FourParamLogScore(abstract_model.IrtModel):
             disc = pyro.sample("disc", dist.Normal(mu_disc, 1.0 / u_disc))
 
         with pyro.plate("observe_data", obs.size(0)):
-            p_star = torch.sigmoid(disc[items] * (ability[subjects] - diff[items]))
+            p_star = torch.sigmoid(- disc[items] * (ability[subjects] - diff[items]))
             pyro.sample(
                 "obs",
                 dist.Normal(loc=feass[items] * p_star, scale=1.0/scale_obs),

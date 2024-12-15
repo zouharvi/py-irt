@@ -65,8 +65,8 @@ class Decoder(nn.Module):
         return F.softmax(self.bn(self.beta(inputs)), dim=1)
 
 
-@abstract_model.IrtModel.register("amortized_1pl_score")
-class Amortized1PLScore(abstract_model.IrtModel):
+@abstract_model.IrtModel.register("amortized_4pl_score")
+class AmortizedFourParamLogScore(abstract_model.IrtModel):
     
     def __init__(
         self, *, 
@@ -83,7 +83,6 @@ class Amortized1PLScore(abstract_model.IrtModel):
         super().__init__(
             device=device, num_items=num_items, num_subjects=num_subjects, verbose=verbose
         )
-
         # initialize the class with all arguments provided to the constructor
         self.num_dimensions = 1
         self.device = torch.device(device)
@@ -92,14 +91,14 @@ class Amortized1PLScore(abstract_model.IrtModel):
         self.num_items = num_items
 
         self.vocab_size = vocab_size
-        self.encoder = Encoder(vocab_size, self.num_dimensions, self.hidden, self.drop)
-        self.decoder = Decoder(vocab_size, self.num_dimensions, self.drop)
-    
+        self.encoder_diff = Encoder(vocab_size, self.num_dimensions, self.hidden, self.drop).to(device)
+        self.decoder_diff = Decoder(vocab_size, self.num_dimensions, self.drop).to(device)
+        self.encoder_disc = Encoder(vocab_size, self.num_dimensions, self.hidden, self.drop).to(device)
+        self.decoder_disc = Decoder(vocab_size, self.num_dimensions, self.drop).to(device)
 
     def model_irt(self, models, items, obs):
         num_items = len(items)
         options = dict(dtype=torch.float64, device=self.device)
-        #xs = torch.flatten(items, start_dim=1)
         xs = items
         models = torch.tensor(models, dtype=torch.long, device=items.device)
         items = torch.tensor(items, dtype=torch.long, device=items.device)
@@ -108,21 +107,31 @@ class Amortized1PLScore(abstract_model.IrtModel):
         with pyro.plate("thetas"):
             ability = pyro.sample('theta', dist.Normal(torch.zeros(self.num_subjects, **options),
                 torch.ones(self.num_subjects, **options)))
-        with pyro.plate("diffs", num_items):
+        with pyro.plate("items", num_items):
             # sample the item difficulty from the prior distribution
             diff_prior_loc = torch.zeros(num_items, **options).unsqueeze(1).float()
             diff_prior_scale = torch.ones(num_items, **options).fill_(1.e3).unsqueeze(1).float()
-            diff = pyro.sample('b', dist.Normal(diff_prior_loc, diff_prior_scale).to_event(1))
-            loc = self.decoder.forward(diff)
-            total_count = int(xs.sum(-1).max())
-            pyro.sample(
-                'items',
-                dist.Multinomial(total_count, loc),
-                obs=items
-            )
-            #diff = pyro.sample('b', dist.Normal(torch.zeros(num_items, **options),
-            #    torch.tensor(num_items, **options).fill_(1.e-3)))
+            diff = pyro.sample('diff', dist.Normal(diff_prior_loc, diff_prior_scale).to_event(1))
+            # loc = self.decoder_diff.forward(diff)
+            # total_count = int(xs.sum(-1).max())
+            # print("LOC", loc)
+            # pyro.sample(
+            #     'items_diff',
+            #     dist.Multinomial(total_count, loc),
+            #     obs=items
+            # )
 
+            # sample the item discriminability from the prior distribution
+            disc_prior_loc = torch.zeros(num_items, **options).unsqueeze(1).float()
+            disc_prior_scale = torch.ones(num_items, **options).fill_(1.e3).unsqueeze(1).float()
+            disc = pyro.sample('disc', dist.Normal(disc_prior_loc, disc_prior_scale).to_event(1))
+            # loc = self.decoder_disc.forward(disc)
+            # total_count = int(xs.sum(-1).max())
+            # pyro.sample(
+            #     'items_disc',
+            #     dist.Multinomial(total_count, loc),
+            #     obs=items
+            # )
         u_obs = pyro.sample(
             'u_obs',
             dist.Gamma(
@@ -131,10 +140,8 @@ class Amortized1PLScore(abstract_model.IrtModel):
             )
         )
 
-        with pyro.plate("data", len(obs)):
-            # pyro.sample("obs", dist.Bernoulli(
-            #     logits=ability[models] - diff).to_event(1), obs=obs)
-            p_star = torch.sigmoid(ability[models] - diff)
+        with pyro.plate("observe_data", len(obs)):
+            p_star = torch.sigmoid(-disc * (ability[models] - diff))
             pyro.sample('obs', dist.Normal(loc=p_star, scale=1.0/u_obs).to_event(1), obs=obs)
         
     def guide_irt(self, models, items, obs):
@@ -148,33 +155,51 @@ class Amortized1PLScore(abstract_model.IrtModel):
         obs = torch.tensor(obs, dtype=torch.float, device=self.device)
 
         # register learnable params in the param store
-        with pyro.plate("thetas"):
+        with pyro.plate("systems"):
             m_theta_param = pyro.param("loc_ability", torch.zeros(self.num_subjects, **options))
             s_theta_param = pyro.param("scale_ability", torch.ones(self.num_subjects, **options),
                             constraint=constraints.positive)
             dist_theta = dist.Normal(m_theta_param, s_theta_param)
             pyro.sample("theta", dist_theta)
 
-        # items 
-        with pyro.plate("diffs", num_items):
+        with pyro.plate("items", num_items):
+            # diff
             irt_batch_size = 256
             loc_diffs_all, scale_diffs_all = [], []
             for i in range(0, len(items), irt_batch_size):
                 if len(items[i:]) < irt_batch_size:
                     batch_xs = items[i:]
-                    loc_diffs, scale_diffs = self.encoder.forward(batch_xs)
+                    loc_diffs, scale_diffs = self.encoder_diff.forward(batch_xs)
                     loc_diffs_all.extend(loc_diffs)
                     scale_diffs_all.extend(scale_diffs) 
                 else:
                     # pick out the appropriate images from xs based on items idx
                     batch_xs = items[i:i+irt_batch_size]
-                    loc_diffs, scale_diffs = self.encoder.forward(batch_xs)
+                    loc_diffs, scale_diffs = self.encoder_diff.forward(batch_xs)
                     loc_diffs_all.extend(loc_diffs)
                     scale_diffs_all.extend(scale_diffs)
             loc_diffs_all = torch.tensor(loc_diffs_all, **options).unsqueeze(1).float()
             scale_diffs_all = torch.tensor(scale_diffs_all, **options).unsqueeze(1).float()
-            dist_b = dist.Normal(loc_diffs_all, scale_diffs_all)
-            pyro.sample('b', dist_b.to_event(1))
+            dist_diff = dist.Normal(loc_diffs_all, scale_diffs_all)
+            pyro.sample('diff', dist_diff.to_event(1))
+
+            loc_discs_all, scale_discs_all = [], []
+            for i in range(0, len(items), irt_batch_size):
+                if len(items[i:]) < irt_batch_size:
+                    batch_xs = items[i:]
+                    loc_discs, scale_discs = self.encoder_disc.forward(batch_xs)
+                    loc_discs_all.extend(loc_discs)
+                    scale_discs_all.extend(scale_discs) 
+                else:
+                    # pick out the appropriate images from xs based on items idx
+                    batch_xs = items[i:i+irt_batch_size]
+                    loc_discs, scale_discs = self.encoder_disc.forward(batch_xs)
+                    loc_discs_all.extend(loc_discs)
+                    scale_discs_all.extend(scale_discs)
+            loc_discs_all = torch.tensor(loc_discs_all, **options).unsqueeze(1).float()
+            scale_discs_all = torch.tensor(scale_discs_all, **options).unsqueeze(1).float()
+            dist_disc = dist.Normal(loc_discs_all, scale_discs_all)
+            pyro.sample('disc', dist_disc.to_event(1))
 
     def get_model(self):
         return self.model_irt
@@ -204,12 +229,15 @@ class Amortized1PLScore(abstract_model.IrtModel):
 
     def export(self, items):
         items = torch.tensor(items, dtype=torch.float)
-        diffs, _ = self.encoder.forward(items)
+        diffs, _ = self.encoder_diff.forward(items)
         diffs = diffs.squeeze().detach().numpy()
+        discs, _ = self.encoder_disc.forward(items)
+        discs = discs.squeeze().detach().numpy()
 
         return {
             "ability": pyro.param("loc_ability").data.tolist(),
-            "diff": diffs.tolist()
+            "diff": diffs.tolist(),
+            "disc": discs.tolist(),
         }
 
     def fit_MCMC(self, models, items, responses, num_epochs):
@@ -230,10 +258,8 @@ class Amortized1PLScore(abstract_model.IrtModel):
             model_params = self.export(items)
         abilities = np.array([model_params["ability"][i] for i in subjects])
         diffs = np.array(model_params["diff"])
-        #items = torch.tensor(items, dtype=torch.float)
-        #diffs, _ = self.encoder.forward(items)
-        #diffs = diffs.squeeze().detach().numpy()
-        return 1 / (1 + np.exp(-(abilities - diffs)))
+        discs = np.array(model_params["disc"])
+        return 1 / (1 + np.exp(-discs*(abilities - diffs)))
 
     def summary(self, traces, sites):
         """Aggregate marginals for MCM"""
