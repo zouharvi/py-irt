@@ -225,11 +225,11 @@ class Dataset(BaseModel):
 
         # replace with embeddings / vectors if we have them
         observation_items = []
-        for item_name in merged.item_name.values:
+        for item_name, item_id in zip(merged.item_name.values, merged.item_id.values):
             if embeddings:
                 observation_items.append(embeddings[item_name])
             else:
-                observation_items.append(item_name)
+                observation_items.append(item_id)
 
 
         return cls(

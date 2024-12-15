@@ -115,7 +115,6 @@ class AmortizedFourParamLogScore(abstract_model.IrtModel):
             loc = self.decoder_diff.forward(diff)
             # TODO: for embeddings, this is not true because the support is different
             total_count = int(xs.sum(-1).max())
-            print("LOC", loc)
             pyro.sample(
                 'items_diff',
                 dist.Multinomial(total_count, loc),
