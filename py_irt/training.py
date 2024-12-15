@@ -62,7 +62,6 @@ class IrtModelTrainer:
         config: IrtConfig,
         dataset: Optional[Dataset] = None,
         verbose: bool = True,
-        embedding_model_id: str = None
     ) -> None:
         self._data_path = data_path
         self._config = config
@@ -79,7 +78,6 @@ class IrtModelTrainer:
         self._pyro_guide = None
         self._verbose = verbose
         self.best_params = None
-        self.embedding_model_id = embedding_model_id
         if dataset is None:
             self._dataset = Dataset.from_jsonlines(data_path, amortized=self.amortized)
         else:
@@ -221,14 +219,7 @@ class IrtModelTrainer:
 
     def export(self, items):
         if self.amortized:
-            inputs = list(self._dataset.item_ids)
-            if not self.embedding_model_id:
-                vectorizer = CountVectorizer(max_df=0.5, min_df=20, stop_words="english")
-                vectorizer.fit(inputs)
-                inputs = vectorizer.transform(inputs).todense().tolist()
-            else:
-                embedding_model = SentenceTransformer(self.embedding_model_id)
-                inputs = embedding_model.encode(inputs).tolist()
+            inputs = self._dataset.observation_items
             results = self.irt_model.export(inputs)
         else:
             results = self.irt_model.export()

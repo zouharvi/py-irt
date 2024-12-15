@@ -112,26 +112,28 @@ class AmortizedFourParamLogScore(abstract_model.IrtModel):
             diff_prior_loc = torch.zeros(num_items, **options).unsqueeze(1).float()
             diff_prior_scale = torch.ones(num_items, **options).fill_(1.e3).unsqueeze(1).float()
             diff = pyro.sample('diff', dist.Normal(diff_prior_loc, diff_prior_scale).to_event(1))
-            # loc = self.decoder_diff.forward(diff)
-            # total_count = int(xs.sum(-1).max())
-            # print("LOC", loc)
-            # pyro.sample(
-            #     'items_diff',
-            #     dist.Multinomial(total_count, loc),
-            #     obs=items
-            # )
+            loc = self.decoder_diff.forward(diff)
+            # TODO: for embeddings, this is not true because the support is different
+            total_count = int(xs.sum(-1).max())
+            print("LOC", loc)
+            pyro.sample(
+                'items_diff',
+                dist.Multinomial(total_count, loc),
+                obs=items
+            )
 
             # sample the item discriminability from the prior distribution
             disc_prior_loc = torch.zeros(num_items, **options).unsqueeze(1).float()
             disc_prior_scale = torch.ones(num_items, **options).fill_(1.e3).unsqueeze(1).float()
             disc = pyro.sample('disc', dist.Normal(disc_prior_loc, disc_prior_scale).to_event(1))
-            # loc = self.decoder_disc.forward(disc)
-            # total_count = int(xs.sum(-1).max())
-            # pyro.sample(
-            #     'items_disc',
-            #     dist.Multinomial(total_count, loc),
-            #     obs=items
-            # )
+            loc = self.decoder_disc.forward(disc)
+            # TODO: for embeddings, this is not true because the support is different
+            total_count = int(xs.sum(-1).max())
+            pyro.sample(
+                'items_disc',
+                dist.Multinomial(total_count, loc),
+                obs=items
+            )
         u_obs = pyro.sample(
             'u_obs',
             dist.Gamma(
