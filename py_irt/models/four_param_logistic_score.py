@@ -102,7 +102,6 @@ class FourParamLogScore(abstract_model.IrtModel):
             disc = pyro.sample("disc", dist.Normal(mu_disc, 1.0 / u_disc))
 
         with pyro.plate("observe_data", obs.size(0)):
-            # NOTE: this should be -disc but works better without it?
             p_star = torch.sigmoid(disc[items] * (ability[subjects] - diff[items]))
             pyro.sample(
                 "obs",

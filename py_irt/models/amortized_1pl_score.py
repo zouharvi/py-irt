@@ -2,15 +2,12 @@ from py_irt.models import abstract_model
 import pyro
 import pyro.distributions as dist
 import torch
-
 import torch.distributions.constraints as constraints
 
 from pyro.infer import SVI, Trace_ELBO, EmpiricalMarginal, TraceEnum_ELBO
 from pyro.infer.mcmc import MCMC, NUTS
 from pyro.optim import Adam, SGD
-
 import pyro.contrib.autoguide as autoguide
-
 import pandas as pd
 
 from functools import partial
@@ -83,6 +80,8 @@ class Amortized1PLScore(abstract_model.IrtModel):
         super().__init__(
             device=device, num_items=num_items, num_subjects=num_subjects, verbose=verbose
         )
+        # NOTE: overwrite device to be cpu
+        device = "cpu"
 
         # initialize the class with all arguments provided to the constructor
         self.num_dimensions = 1
@@ -93,38 +92,25 @@ class Amortized1PLScore(abstract_model.IrtModel):
 
         self.vocab_size = vocab_size
         self.encoder = Encoder(vocab_size, self.num_dimensions, self.hidden, self.drop)
-        self.decoder = Decoder(vocab_size, self.num_dimensions, self.drop)
-    
+        # self.decoder = Decoder(vocab_size, self.num_dimensions, self.drop)
 
     def model_irt(self, models, items, obs):
         num_items = len(items)
         options = dict(dtype=torch.float64, device=self.device)
-        #xs = torch.flatten(items, start_dim=1)
-        xs = items
-        models = torch.tensor(models, dtype=torch.long, device=items.device)
-        items = torch.tensor(items, dtype=torch.float, device=items.device)
-        obs = torch.tensor(obs, dtype=torch.float, device=items.device)
+        models = torch.tensor(models, dtype=torch.long, device=self.device)
+        items = torch.tensor(items, dtype=torch.float, device=self.device)
+        obs = torch.tensor(obs, dtype=torch.float, device=self.device)
 
         with pyro.plate("thetas"):
-            ability = pyro.sample('theta', dist.Normal(torch.zeros(self.num_subjects, **options),
-                torch.ones(self.num_subjects, **options)))
-        with pyro.plate("diffs", num_items):
+            ability = pyro.sample('theta', dist.Normal(
+                torch.zeros(self.num_subjects, **options),
+                torch.ones(self.num_subjects, **options),
+            ))
+        with pyro.plate("items", num_items):
             # sample the item difficulty from the prior distribution
             diff_prior_loc = torch.zeros(num_items, **options).unsqueeze(1).float()
             diff_prior_scale = torch.ones(num_items, **options).fill_(1.e3).unsqueeze(1).float()
-            diff = pyro.sample('b', dist.Normal(diff_prior_loc, diff_prior_scale).to_event(1))
-            # loc = self.decoder.forward(diff)
-            # total_count = int(xs.sum(-1).max())
-            # print("XXXX total count: ", total_count)
-            # print("XXXX loc.shape", loc.shape)
-            # print("XXXX items.shape", items.shape)
-            # pyro.sample(
-            #     'items',
-            #     dist.Multinomial(total_count, loc),
-            #     obs=items
-            # )
-            #diff = pyro.sample('b', dist.Normal(torch.zeros(num_items, **options),
-            #    torch.tensor(num_items, **options).fill_(1.e-3)))
+            diff = pyro.sample('diff', dist.Normal(diff_prior_loc, diff_prior_scale).to_event(1))
 
         scale_obs = pyro.sample(
             'scale_obs',
@@ -135,16 +121,12 @@ class Amortized1PLScore(abstract_model.IrtModel):
         )
 
         with pyro.plate("data", len(obs)):
-            # pyro.sample("obs", dist.Bernoulli(
-            #     logits=ability[models] - diff).to_event(1), obs=obs)
             p_star = torch.sigmoid(ability[models] - diff)
             pyro.sample('obs', dist.Normal(loc=p_star, scale=1.0/scale_obs).to_event(1), obs=obs)
         
     def guide_irt(self, models, items, obs):
         num_items = len(items)
-        options = dict(dtype=torch.float64, device=self.device)
-        #xs = torch.flatten(items, start_dim=1)
-        xs = items
+        options = dict(dtype=torch.float, device=self.device)
         # vectorize
         models = torch.tensor(models, dtype=torch.long, device=self.device)
         items = torch.tensor(items, dtype=torch.float, device=self.device)
@@ -159,25 +141,10 @@ class Amortized1PLScore(abstract_model.IrtModel):
             pyro.sample("theta", dist_theta)
 
         # items 
-        with pyro.plate("diffs", num_items):
-            irt_batch_size = 256
-            loc_diffs_all, scale_diffs_all = [], []
-            for i in range(0, len(items), irt_batch_size):
-                if len(items[i:]) < irt_batch_size:
-                    batch_xs = items[i:]
-                    loc_diffs, scale_diffs = self.encoder.forward(batch_xs)
-                    loc_diffs_all.extend(loc_diffs)
-                    scale_diffs_all.extend(scale_diffs) 
-                else:
-                    # pick out the appropriate images from xs based on items idx
-                    batch_xs = items[i:i+irt_batch_size]
-                    loc_diffs, scale_diffs = self.encoder.forward(batch_xs)
-                    loc_diffs_all.extend(loc_diffs)
-                    scale_diffs_all.extend(scale_diffs)
-            loc_diffs_all = torch.tensor(loc_diffs_all, **options).unsqueeze(1).float()
-            scale_diffs_all = torch.tensor(scale_diffs_all, **options).unsqueeze(1).float()
+        with pyro.plate("items", num_items):
+            loc_diffs_all, scale_diffs_all = self.encoder.forward(items)
             dist_b = dist.Normal(loc_diffs_all, scale_diffs_all)
-            pyro.sample('b', dist_b.to_event(1))
+            pyro.sample('diff', dist_b.to_event(1))
 
         # sample statements
         alpha_obs_param = pyro.param(
@@ -230,13 +197,13 @@ class Amortized1PLScore(abstract_model.IrtModel):
 
     def fit_MCMC(self, models, items, responses, num_epochs):
         """Fit the IRT model with MCMC"""
-        sites = ["theta", "b"]
+        sites = ["theta", "diff"]
         nuts_kernel = NUTS(self.model_vague, adapt_step_size=True)
         hmc_posterior = MCMC(nuts_kernel, num_samples=1000, warmup_steps=100).run(
             models, items, responses
         )
         theta_sum = self.summary(hmc_posterior, ["theta"]).items()
-        b_sum = self.summary(hmc_posterior, ["b"]).items()
+        b_sum = self.summary(hmc_posterior, ["diff"]).items()
         
     def predict(self, subjects, items, params_from_file=None):
         """predict p(correct | params) for a specified list of model, item pairs"""
@@ -246,9 +213,6 @@ class Amortized1PLScore(abstract_model.IrtModel):
             model_params = self.export(items)
         abilities = np.array([model_params["ability"][i] for i in subjects])
         diffs = np.array(model_params["diff"])
-        #items = torch.tensor(items, dtype=torch.float)
-        #diffs, _ = self.encoder.forward(items)
-        #diffs = diffs.squeeze().detach().numpy()
         return 1 / (1 + np.exp(-(abilities - diffs)))
 
     def summary(self, traces, sites):
