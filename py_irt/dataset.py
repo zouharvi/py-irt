@@ -52,7 +52,10 @@ class Dataset(BaseModel):
 
     # observation_subjects and observation_items refers to indices
     observation_subjects: List[int] # subjects encoded as integers
-    observation_items: List # items encoded as integers
+    observation_items: List # items encoded as integers or embeddings
+
+    # dictionary for embeddings, if available
+    embeddings: Dict[str, List[float]] = None
 
     # Actual response value, usually an integer
     observations: List[float]
@@ -136,6 +139,7 @@ class Dataset(BaseModel):
             observation_items=observation_items,
             observations=observations,
             training_example=training_example,
+            embeddings=embeddings,
         )
 
     @classmethod
@@ -231,7 +235,6 @@ class Dataset(BaseModel):
             else:
                 observation_items.append(item_id)
 
-
         return cls(
             item_ids = OrderedSet([str(x) for x in merged.item_name.values]),
             subject_ids = OrderedSet([str(x) for x in merged.subject_name.values]),
@@ -242,7 +245,8 @@ class Dataset(BaseModel):
             item_id_to_ix = dict(zip(item_ids.item_name, item_ids.item_id)),
             ix_to_item_id = dict(zip(item_ids.item_id, item_ids.item_name)),
             subject_id_to_ix = dict(zip(subject_ids.subject_name, subject_ids.subject_id)),
-            ix_to_subject_id = dict(zip(subject_ids.subject_id, subject_ids.subject_name))
+            ix_to_subject_id = dict(zip(subject_ids.subject_id, subject_ids.subject_name)),
+            embeddings = embeddings,
         )
     
     def to_pandas(self, wide=True):

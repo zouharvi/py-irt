@@ -172,7 +172,7 @@ class IrtModelTrainer:
         )
         
         items = torch.tensor(
-            self._dataset.observation_items, dtype=torch.long, device=device
+            self._dataset.observation_items, dtype=torch.float, device=device
         )
         responses = torch.tensor(
             self._dataset.observations, dtype=torch.float, device=device
@@ -219,7 +219,8 @@ class IrtModelTrainer:
 
     def export(self, items):
         if self.amortized:
-            inputs = self._dataset.observation_items
+            # item ids are actually item names
+            inputs = [self._dataset.embeddings[x] for x in self._dataset.item_ids]
             results = self.irt_model.export(inputs)
         else:
             results = self.irt_model.export()

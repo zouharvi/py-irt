@@ -102,7 +102,7 @@ class Amortized1PLScore(abstract_model.IrtModel):
         #xs = torch.flatten(items, start_dim=1)
         xs = items
         models = torch.tensor(models, dtype=torch.long, device=items.device)
-        items = torch.tensor(items, dtype=torch.long, device=items.device)
+        items = torch.tensor(items, dtype=torch.float, device=items.device)
         obs = torch.tensor(obs, dtype=torch.float, device=items.device)
 
         with pyro.plate("thetas"):
@@ -113,18 +113,21 @@ class Amortized1PLScore(abstract_model.IrtModel):
             diff_prior_loc = torch.zeros(num_items, **options).unsqueeze(1).float()
             diff_prior_scale = torch.ones(num_items, **options).fill_(1.e3).unsqueeze(1).float()
             diff = pyro.sample('b', dist.Normal(diff_prior_loc, diff_prior_scale).to_event(1))
-            loc = self.decoder.forward(diff)
-            total_count = int(xs.sum(-1).max())
-            pyro.sample(
-                'items',
-                dist.Multinomial(total_count, loc),
-                obs=items
-            )
+            # loc = self.decoder.forward(diff)
+            # total_count = int(xs.sum(-1).max())
+            # print("XXXX total count: ", total_count)
+            # print("XXXX loc.shape", loc.shape)
+            # print("XXXX items.shape", items.shape)
+            # pyro.sample(
+            #     'items',
+            #     dist.Multinomial(total_count, loc),
+            #     obs=items
+            # )
             #diff = pyro.sample('b', dist.Normal(torch.zeros(num_items, **options),
             #    torch.tensor(num_items, **options).fill_(1.e-3)))
 
-        u_obs = pyro.sample(
-            'u_obs',
+        scale_obs = pyro.sample(
+            'scale_obs',
             dist.Gamma(
                 torch.tensor(1.0, device=self.device),
                 torch.tensor(1.0, device=self.device)
@@ -135,7 +138,7 @@ class Amortized1PLScore(abstract_model.IrtModel):
             # pyro.sample("obs", dist.Bernoulli(
             #     logits=ability[models] - diff).to_event(1), obs=obs)
             p_star = torch.sigmoid(ability[models] - diff)
-            pyro.sample('obs', dist.Normal(loc=p_star, scale=1.0/u_obs).to_event(1), obs=obs)
+            pyro.sample('obs', dist.Normal(loc=p_star, scale=1.0/scale_obs).to_event(1), obs=obs)
         
     def guide_irt(self, models, items, obs):
         num_items = len(items)
@@ -175,6 +178,19 @@ class Amortized1PLScore(abstract_model.IrtModel):
             scale_diffs_all = torch.tensor(scale_diffs_all, **options).unsqueeze(1).float()
             dist_b = dist.Normal(loc_diffs_all, scale_diffs_all)
             pyro.sample('b', dist_b.to_event(1))
+
+        # sample statements
+        alpha_obs_param = pyro.param(
+            "alpha_obs",
+            torch.tensor(1.0, device=self.device),
+            constraint=constraints.positive,
+        )
+        beta_obs_param = pyro.param(
+            "beta_obs",
+            torch.tensor(1.0, device=self.device),
+            constraint=constraints.positive,
+        )
+        scale_obs = pyro.sample("scale_obs", dist.Gamma(alpha_obs_param, beta_obs_param))
 
     def get_model(self):
         return self.model_irt
