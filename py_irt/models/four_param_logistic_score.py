@@ -33,6 +33,7 @@ class FourParamLogScore(abstract_model.IrtModel):
         )
 
     def model_hierarchical(self, subjects, items, obs):
+        items = items.long()
         mu_diff = pyro.sample(
             "mu_diff",
             dist.Normal(

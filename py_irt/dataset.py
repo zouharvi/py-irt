@@ -55,7 +55,7 @@ class Dataset(BaseModel):
     observation_items: List # items encoded as integers or embeddings
 
     # dictionary for embeddings, if available
-    embeddings: Dict[str, List[float]] = None
+    embeddings: Union[Dict[str, List[float]], None] = None
 
     # Actual response value, usually an integer
     observations: List[float]
