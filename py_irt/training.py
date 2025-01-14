@@ -23,6 +23,7 @@
 from typing import Optional, Union, Dict
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
+import contextlib
 
 import typer
 import torch
@@ -35,7 +36,6 @@ from rich.live import Live
 from rich.table import Table
 
 from sklearn.feature_extraction.text import CountVectorizer
-
 
 
 # This import is necessary to have @register run
@@ -77,6 +77,7 @@ class IrtModelTrainer:
         self._pyro_model = None
         self._pyro_guide = None
         self._verbose = verbose
+        console.quiet = not self._verbose
         self.best_params = None
         if dataset is None:
             self._dataset = Dataset.from_jsonlines(data_path, amortized=self.amortized)
@@ -193,9 +194,13 @@ class IrtModelTrainer:
         best_loss = loss
         current_lr = self._config.lr
         
-        with Live(table if self._verbose else None) as live:
-            live.console.quiet = not self._verbose
+        if self._verbose:
+            live = Live(table)
             live.console.print(f"Training Pyro IRT Model for {epochs} epochs")
+        else:
+            live = contextlib.nullcontext()
+
+        with live:
             for epoch in range(epochs):
                 loss = svi.step(subjects, items, responses)
                 # exit(1)
