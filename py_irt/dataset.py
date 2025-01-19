@@ -24,10 +24,8 @@ from typing import Set, Dict, List, Union
 from pathlib import Path
 from pydantic import BaseModel
 from py_irt.io import read_jsonlines
-from sklearn.feature_extraction.text import CountVectorizer
 from ordered_set import OrderedSet
 from rich.console import Console
-from sentence_transformers import SentenceTransformer
 
 import pandas as pd
 

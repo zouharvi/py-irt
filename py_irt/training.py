@@ -21,7 +21,6 @@
 # SOFTWARE.
 
 from typing import Optional, Union, Dict
-from sentence_transformers import SentenceTransformer
 from pathlib import Path
 import contextlib
 
@@ -34,8 +33,6 @@ import pyro
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
-
-from sklearn.feature_extraction.text import CountVectorizer
 
 
 # This import is necessary to have @register run
